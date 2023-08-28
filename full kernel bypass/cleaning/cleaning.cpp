@@ -5,6 +5,7 @@
 #include <ntimage.h>
 
 #include "../defs.h"
+#include "../Nt.h"
 #include "../io/io.h"
 #include "cleaning.h"
 

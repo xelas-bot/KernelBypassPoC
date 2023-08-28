@@ -184,6 +184,7 @@
     <ClInclude Include="defs.h" />
     <ClInclude Include="io\io.h" />
     <ClInclude Include="memory\memory.h" />
+    <ClInclude Include="Nt.h" />
     <ClInclude Include="process\process.h" />
     <ClInclude Include="thread\thread.h" />
     <ClInclude Include="utils\utils.h" />

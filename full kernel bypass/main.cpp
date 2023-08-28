@@ -37,69 +37,102 @@ void driver_thread( void* context )
 
 	__try {
 		// debug text
-		io::dbgprint( "cleaning status -> %i", cleaning::clean_traces( ) );
-		io::dbgprint("tid -> %i", PsGetCurrentThreadId());
+		// io::dbgprint( "cleaning status -> %i", cleaning::clean_traces( ) );
 
 		// user extersize
-		bool status = thread::unlink();
-		io::dbgprint("unlinked thread -> %i", status);
+		io::dbgprint("unlinked thread -> %i", thread::unlink() );
+
 
 		// change your process name here
 		const char* p_name = "csgo.exe";
-		io::dbgprint("process name -> %s", p_name);
-		ULONG tPid = 0;
-		PEPROCESS process_mem;
-
-		 // scuff check to check if our peprocess is valid
-		while (utils::process_by_name(p_name, &tPid, &process_mem) == 0)
+		NTSTATUS status = STATUS_SUCCESS;
+		io::dbgprint("waiting for csgo.exe...");
+		while (true)
 		{
-			io::dbgprint("waiting for -> %s", p_name);
-			utils::sleep(2000);
-		}
-		io::dbgprint("found process -> %s with id -> %I64d", p_name, tPid);
+			status = memory::GetProcByName("csgo.exe", &memory::targetApplication, 0);
+			if (NT_SUCCESS(status))
+				break;
 
-		PVOID base_address = PsGetProcessSectionBaseAddress( process_mem ) ;
-		io::dbgprint( "base address -> 0x%llx", base_address);
+			utils::sleep(3000);
+		}
+		io::dbgprint("found process:%s ", p_name);
+
+		io::dbgprint("getting pid...");
+		HANDLE procId = PsGetProcessId(memory::targetApplication);
+
+		if (!procId)
+		{
+			io::dbgprint("failed to find proc id");
+			thread::link();
+			PsTerminateSystemThread(0);
+		}
+
+		memory::pid = (ULONG)procId;
+		io::dbgprint("got pid %i", memory::pid);
 
 		io::dbgprint("sleeping for 30 seconds waiting for modules to load");
 		utils::sleep(30000);
 
-		KAPC_STATE apc;
-		KeStackAttachProcess(process_mem, &apc); // TODO potential detection vector here (fix is using virtual to physical memory translation) thus removing the need for this conversion
-		PVOID clientAddr = utils::get_module_entry(process_mem, L"engine.dll");
-		KeUnstackDetachProcess(&apc);
-
-		while (!clientAddr)
+		int count = 0;
+		while (!utils:: GetModuleBasex86(memory::targetApplication, L"serverbrowser.dll"))
 		{
-			io::dbgprint("looking for client.dll module load");
-			utils::sleep(3000);
-
-			apc = { 0 };
-			KeStackAttachProcess(process_mem, &apc);
-			clientAddr = utils::get_module_entry(process_mem, L"engine.dll");
-			KeUnstackDetachProcess(&apc);
-		}
-		io::dbgprint("Found client dll addr! -> %0x", clientAddr); 
-
-
-		while (true) // main hack loop
-		{
-			DWORD client_state;
-			memory::read_virtual_memory(tPid, process_mem, (char*)clientAddr + 0x59F19C, &client_state, sizeof(DWORD)); //clientState
-
-			if (client_state) {
-				DWORD local_player;
-				memory::read_virtual_memory(tPid, process_mem, (PVOID)(client_state + 0x180), &local_player, sizeof(DWORD)); //localplatyer
-				if (local_player) {
-					DWORD health;
-					memory::read_virtual_memory(tPid, process_mem, (PVOID)(local_player + 0x100), &health, sizeof(DWORD));//iHealth
-					io::dbgprint(
-						"[+] Found local player: 0x%X, health: %d\n",
-						local_player,
-						health
-					);
-				}
+			if (count >= 30) //wait 30 sec then abort
+			{
+				io::dbgprint("failed to get serverbrowser dll\n");
+				thread::link();
+				return;
 			}
+			count++;
+			utils::sleep(1000);
+		}
+
+
+		memory::clientBase = utils::GetModuleBasex86(memory::targetApplication, L"client.dll");
+		if (!memory::clientBase)
+		{
+			io::dbgprint("failed to get clientBase");
+			thread::link();
+			return;
+		}
+
+		memory::engineBase = utils::GetModuleBasex86(memory::targetApplication, L"engine.dll");
+		if (!memory::engineBase)
+		{
+			io::dbgprint("failed to get engineBase");
+			thread::link();
+			return;
+		}
+
+		io::dbgprint("All pointers found: clientbase: %x, enginebase: %x", memory::clientBase, memory::engineBase);
+
+		PEPROCESS process = 0;
+		while (true) {
+			process = 0;
+			NTSTATUS status = PsLookupProcessByProcessId((HANDLE)memory::pid, &process);
+			if (!NT_SUCCESS(status) || !process )
+			{
+				io::dbgprint("process closed %i", memory::pid);
+				thread::link();
+				return;
+			}
+			
+			DWORD localplayer = memory::ReadMemory<DWORD>(memory::clientBase + 0xDEA98C); // local player
+			DWORD localTeam = memory::ReadMemory<DWORD>(localplayer + 0xF4);//fixed teamnum
+			DWORD health = memory::ReadMemory<DWORD>(localplayer + 0x100); //ihealth
+				
+			io::dbgprint("Got localplayer params, team:%u, health:%u", localTeam, health);
+			utils::sleep(1000);
+
+			for (size_t i = 0; i < 64; ++i)
+			{
+				DWORD currEnt = memory::ReadMemory<DWORD>(memory::clientBase + 0x4DFFF7C + (i * 0x10)); //dw entity list
+				if (!currEnt)
+					continue;
+
+				bool t = true;
+				memory::WriteMemory<bool>(currEnt + 0x93D, &t); //spotted
+			}
+
 		}
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {

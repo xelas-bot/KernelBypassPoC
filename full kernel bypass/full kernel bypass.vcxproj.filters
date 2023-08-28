@@ -73,5 +73,8 @@
     <ClInclude Include="CallStack-Spoofer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Nt.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
