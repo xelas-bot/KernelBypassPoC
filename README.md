@@ -7,6 +7,7 @@ https://github.com/bittzz/Overwolf-ESP-poc
 
 ToDo: Disable Control Flow guard and Dep for callstack spoofing
 Implement GetLastError to fix write protection issues
+Detect process exit and prevent BSOD from invalid memory access
 
 
 https://github.com/coltonon/D2DOverlay
